@@ -31,16 +31,12 @@ import urllib.request
 
 
 def resource_path(filename: str) -> str:
-    """
-    取得資源的正確路徑（支援 PyInstaller 的 sys._MEIPASS）。
-    """
     base_path = getattr(sys, "_MEIPASS", None)
     if base_path is None:
         base_path = os.path.abspath(os.path.dirname(__file__))
     return os.path.join(base_path, filename)
 
 
-# 全域錯誤日誌
 def _global_excepthook(exc_type, exc_value, exc_tb):
     log = os.path.join(os.path.dirname(__file__), "error_log.txt")
     with open(log, "a", encoding="utf-8") as f:
@@ -52,33 +48,26 @@ def _global_excepthook(exc_type, exc_value, exc_tb):
 
 
 def set_windows_creation_time(path, timestamp=None):
-    """
-    在 Windows 設定檔案建立時間（timestamp 為 epoch 秒）。
-    若不是 Windows 或失敗，會安靜忽略。
-    """
     try:
         if os.name != "nt":
             return
         timestamp = time.time() if timestamp is None else float(timestamp)
-        # Windows FILETIME expects 100-nanosecond intervals since Jan 1, 1601
         from ctypes import wintypes
 
         wintime = int((timestamp + 11644473600) * 10000000)
         ctime = wintypes.FILETIME(wintime & 0xFFFFFFFF, wintime >> 32)
 
-        # open file handle
         handle = ctypes.windll.kernel32.CreateFileW(
             str(path),
-            256,  # GENERIC_WRITE
+            256,
             0,
             None,
-            3,  # OPEN_EXISTING
-            0x02000000,  # FILE_FLAG_BACKUP_SEMANTICS
+            3,
+            0x02000000,
             None,
         )
         if handle == -1:
             return
-        # set creation, access, write times (we set all to same time)
         res = ctypes.windll.kernel32.SetFileTime(
             handle, ctypes.byref(ctime), ctypes.byref(ctime), ctypes.byref(ctime)
         )
@@ -88,7 +77,6 @@ def set_windows_creation_time(path, timestamp=None):
         return
 
 
-# Dark QSS 樣式（PyQt5 專案預設 QSS）
 dark_qss = """
 QWidget {
     background-color: #2e2e2e;
@@ -160,7 +148,6 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
 
 class YTMediaDownloader(QWidget):
     log_signal = pyqtSignal(str, str)
-
     progress_signal = pyqtSignal(int)
     status_signal = pyqtSignal(str)
     analyzed = pyqtSignal()
@@ -173,21 +160,16 @@ class YTMediaDownloader(QWidget):
 
     def __init__(self):
         super().__init__()
-        # ---- 安全設定 icon（只有在檔案存在時才設定） ----
         icon_path = resource_path("icon.ico")
         try:
             if os.path.exists(icon_path):
                 app = QApplication.instance()
                 if app is not None:
-                    app.setWindowIcon(
-                        QIcon(icon_path)
-                    )  # 全域 icon（taskbar / Alt+Tab）
-                self.setWindowIcon(QIcon(icon_path))  # 視窗左上角
+                    app.setWindowIcon(QIcon(icon_path))
+                self.setWindowIcon(QIcon(icon_path))
             else:
-                # 若找不到 icon，僅在 console 記錄警告（避免拋例外）
                 print(f"[WARN] icon not found: {icon_path}")
         except Exception as e:
-            # 保險起見：任何異常都不要讓 GUI 崩潰
             print(f"[WARN] 無法設定 icon: {e}")
 
         self.formats = []
@@ -224,7 +206,6 @@ class YTMediaDownloader(QWidget):
         self.queue_list.itemSelectionChanged.connect(self._update_remove_button_state)
         self.url_input.textChanged.connect(self._on_url_changed)
 
-        # 確保初始化時按鈕狀態正確
         self._update_add_button_state()
         self._update_remove_button_state()
         self._update_select_all_checkbox()
@@ -343,11 +324,6 @@ class YTMediaDownloader(QWidget):
         layout.addWidget(main_splitter)
 
     def _on_url_changed(self, _txt: str):
-        """
-        只要 URL 被修改，就視為『尚未分析』狀態：
-        1. 把 self.info 清空
-        2. 重新評估「加入佇列」按鈕是否能按
-        """
         self.info = None
         self._update_add_button_state()
 
@@ -406,16 +382,14 @@ class YTMediaDownloader(QWidget):
         threading.Thread(target=job, args=(analysis_url,), daemon=True).start()
 
     def _on_analysis_done(self):
-        # 解析可用影片畫質
         heights = sorted({f["height"] for f in self.formats if f.get("height")})
         res_list = [f"{h}p" for h in heights]
         self.res_combo.clear()
         self.res_combo.addItems(res_list)
 
-        # 解析可用音訊格式（副檔名 + codec 顯示）
         audio_exts = []
-        self.audio_map = {}  # 顯示文字 → 副檔名（ext）
-        self.audio_codec_map = {}  # 顯示文字 → 音訊編碼（acodec）
+        self.audio_map = {}
+        self.audio_codec_map = {}
 
         for f in self.formats:
             if f.get("vcodec") == "none" and f.get("acodec") not in ["none", None]:
@@ -439,11 +413,9 @@ class YTMediaDownloader(QWidget):
             self.audio_map = {"m4a (aac)": "m4a"}
             self.audio_codec_map = {"m4a (aac)": "aac"}
 
-        # 顯示狀態與啟用按鈕
         self.status.setText("分析完成")
         self.analyze_btn.setEnabled(True)
 
-        # 縮圖處理
         if self.info and self.info.get("id"):
             self._load_thumbnail(self.info["id"])
         else:
@@ -761,13 +733,10 @@ class YTMediaDownloader(QWidget):
         ).start()
 
     def _sanitize_filename(self, title):
-        # 清理 Windows 禁用的檔名符號
         return re.sub(r'[\\/:*?"<>|]', "_", title)
 
     def _start_batch_download(self, download_jobs, download_dir):
-        """批次下載處理"""
         total_items = len(download_jobs)
-
         try:
             for i, job in enumerate(download_jobs):
                 item_data = job.get("data") or {}
@@ -796,7 +765,6 @@ class YTMediaDownloader(QWidget):
                 self.status_signal.emit(f"下載中 {i+1}/{total_items}: {display_text}")
                 self.log_signal.emit(f"[下載] {display_text}", "info")
 
-                # 準備 yt-dlp 選項
                 opts = {
                     "progress_hooks": [self._progress_hook],
                     "postprocessor_hooks": [self._postprocessor_hook],
@@ -812,7 +780,6 @@ class YTMediaDownloader(QWidget):
                 else:
                     self._setup_video_options(opts, format_param, ext_param)
 
-                # 捕捉實際下載路徑
                 final_path = None
 
                 def on_finish(d):
@@ -826,7 +793,6 @@ class YTMediaDownloader(QWidget):
 
                 opts["progress_hooks"].append(on_finish)
 
-                # 執行下載
                 try:
                     YoutubeDL(opts).download([url])
                     self._verify_download_result(
@@ -870,14 +836,10 @@ class YTMediaDownloader(QWidget):
             return exe_path if os.path.exists(exe_path) else "ffmpeg"
 
     def _setup_audio_options(self, opts, format_param, ext_param):
-        """設定音訊下載選項"""
-
-        # 特例：webm (opus) → 保留原始 webm，不轉檔
         if format_param == "opus" and ext_param == "webm":
             opts["format"] = "bestaudio[ext=webm]/bestaudio"
             return
 
-        # 其他音訊格式 → 使用 FFmpegExtractAudio 轉檔
         opts["format"] = "bestaudio/best"
 
         valid_formats = {
@@ -892,7 +854,6 @@ class YTMediaDownloader(QWidget):
             "alac",
         }
 
-        # ext_param 優先，其次 format_param
         target = ext_param or format_param or "best"
         if target not in valid_formats:
             if format_param in valid_formats:
@@ -909,7 +870,6 @@ class YTMediaDownloader(QWidget):
         ]
 
     def _setup_video_options(self, opts, format_param, ext_param):
-        """設定影片下載選項"""
         if format_param:
             opts["format"] = f"bestvideo[height<={format_param}]+bestaudio/best"
         else:
@@ -937,7 +897,6 @@ class YTMediaDownloader(QWidget):
         is_audio_only,
         format_param,
     ):
-        """驗證下載結果"""
         if final_downloaded_path and os.path.exists(final_downloaded_path):
             self._update_download_timestamp(final_downloaded_path)
             self.log_signal.emit(
@@ -981,7 +940,6 @@ class YTMediaDownloader(QWidget):
         return False
 
     def _update_download_timestamp(self, path, timestamp=None):
-        """強制將下載完成檔案的時間戳更新為當前系統時間。"""
         if not path:
             return
         if isinstance(path, (list, tuple)):
@@ -1085,10 +1043,6 @@ class YTMediaDownloader(QWidget):
             self.append_log(line, level)
 
     def _on_queue_item_selected(self, current_item, previous_item):
-        """
-        當佇列清單中的選取項目變更時呼叫此函式。
-        從選取項目的資料中提取影片 ID 並顯示縮圖。
-        """
         if current_item:
             item_data = current_item.data(Qt.UserRole)
             if item_data:
@@ -1195,12 +1149,10 @@ class YTMediaDownloader(QWidget):
             self._updating_check_state -= 1
 
     def _update_add_button_state(self):
-        """根據是否已分析完成與 URL 是否填寫，決定是否啟用加入佇列按鈕"""
         url_filled = bool(self.url_input.text().strip())
         self.add_btn.setEnabled(bool(self.info) and url_filled)
 
     def _update_remove_button_state(self):
-        """根據當前勾選項目決定移除按鈕狀態"""
         checked_items = self._sync_selected_items()
         self.remove_btn.setEnabled(len(checked_items) > 0)
 
