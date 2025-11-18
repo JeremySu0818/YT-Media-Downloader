@@ -382,7 +382,14 @@ class YTMediaDownloader(QWidget):
         threading.Thread(target=job, args=(analysis_url,), daemon=True).start()
 
     def _on_analysis_done(self):
-        heights = sorted({f["height"] for f in self.formats if f.get("height")})
+        heights = sorted(
+            {
+                f["height"]
+                for f in self.formats
+                if f.get("height") and f["height"] >= 144
+            }
+        )
+
         res_list = [f"{h}p" for h in heights]
         self.res_combo.clear()
         self.res_combo.addItems(res_list)
