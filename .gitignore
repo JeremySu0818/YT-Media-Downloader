@@ -1,0 +1,6 @@
+*.exe
+*.iss
+*.spec
+*.bat
+/dist
+/build
